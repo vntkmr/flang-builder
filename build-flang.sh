@@ -287,7 +287,7 @@ INSTALLDIR="${INSTALLDIR:-${ROOTDIR}/install}"
 # Build LLVM targets list
 if [[ -z "${LLVM_TARGETS}" ]]; then
     # Default: X86 and AArch64
-    LLVM_TARGETS="X86;AArch64"
+    LLVM_TARGETS="host;X86;AArch64"
 fi
 
 # Detect tools
