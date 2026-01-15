@@ -33,6 +33,7 @@ ENABLE_ASSERTIONS="${ENABLE_ASSERTIONS:-ON}"
 MEMORY_LIMIT_MB="${MEMORY_LIMIT_MB:-$(calc_default_memory)}"
 ENABLE_WERROR="${ENABLE_WERROR:-ON}"
 ENABLE_REAL16="${ENABLE_REAL16:-ON}"
+ENABLE_OPENMP_OFFLOAD="${ENABLE_OPENMP_OFFLOAD:-OFF}"
 LLVM_TARGETS=""
 EXTRA_CMAKE_ARGS=()
 PRINT_CMAKE_CMD=0
@@ -61,8 +62,9 @@ Options:
     --no-assertions         Disable LLVM assertions
     --no-werror             Disable treating warnings as errors (default: enabled)
     --no-real16             Disable REAL(16) support (default: enabled)
+    --openmp-offload        Enable OpenMP offload support
     --targets TARGETS       Semicolon-separated list of LLVM targets to build
-                            (default: X86;AArch64)
+                            (default: host)
                             Example: --targets "X86;NVPTX"
     --cmake-args "ARGS"     Additional CMake arguments to pass (can override script defaults)
                             Example: --cmake-args "-DLLVM_ENABLE_LTO=ON -DCMAKE_VERBOSE_MAKEFILE=ON"
@@ -268,6 +270,7 @@ while [[ "$#" -gt 0 ]]; do
         --no-assertions) ENABLE_ASSERTIONS="OFF" ;;
         --no-werror) ENABLE_WERROR="OFF" ;;
         --no-real16) ENABLE_REAL16="OFF" ;;
+        --openmp-offload) ENABLE_OPENMP_OFFLOAD="ON" ;;
         --targets) LLVM_TARGETS="$2"; shift ;;
         --cmake-args) EXTRA_CMAKE_ARGS+=($2); shift ;;
         --print-cmake-command) PRINT_CMAKE_CMD=1 ;;
@@ -286,8 +289,8 @@ INSTALLDIR="${INSTALLDIR:-${ROOTDIR}/install}"
 
 # Build LLVM targets list
 if [[ -z "${LLVM_TARGETS}" ]]; then
-    # Default: X86 and AArch64
-    LLVM_TARGETS="host;X86;AArch64"
+    # Default: Host only
+    LLVM_TARGETS="host"
 fi
 
 # Detect tools
@@ -309,6 +312,7 @@ echo "Parallel jobs:     ${PARALLEL_JOBS}"
 echo "Assertions:        ${ENABLE_ASSERTIONS}"
 echo "Werror:            ${ENABLE_WERROR}"
 echo "REAL(16):          ${ENABLE_REAL16}"
+echo "OpenMP Offload:    ${ENABLE_OPENMP_OFFLOAD}"
 echo "LLVM targets:      ${LLVM_TARGETS}"
 echo "C compiler:        ${CC}"
 echo "C++ compiler:      ${CXX}"
@@ -386,6 +390,7 @@ CMAKE_ARGS=(
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     -DCMAKE_C_COMPILER="${CC}"
     -DCMAKE_CXX_COMPILER="${CXX}"
+    -DCMAKE_CXX_STANDARD=17
     -DLLVM_ENABLE_ASSERTIONS="${ENABLE_ASSERTIONS}"
     -DLLVM_TARGETS_TO_BUILD="${LLVM_TARGETS}"
     -DLLVM_LIT_ARGS=-v
@@ -408,8 +413,21 @@ if [[ "${ENABLE_REAL16}" == "ON" ]]; then
     CMAKE_ARGS+=(-DFLANG_RUNTIME_F128_MATH_LIB=libquadmath)
 fi
 
-# Add default runtimes
-CMAKE_ARGS+=(-DLLVM_ENABLE_RUNTIMES="compiler-rt;flang-rt;openmp")
+# Add default runtimes or OpenMP offload configuration
+if [[ "${ENABLE_OPENMP_OFFLOAD}" == "ON" ]]; then
+    CMAKE_ARGS+=(
+        -DLLVM_ENABLE_PROJECTS="clang;lld;mlir;flang;clang-tools-extra"
+        -DLLVM_ENABLE_RUNTIMES="compiler-rt;flang-rt;openmp;offload"
+        -DLIBOMPTARGET_DEVICE_ARCHITECTURES="sm_70;sm_80;sm_90;gfx906;gfx908;gfx90a;gfx942"
+        -DLLVM_RUNTIME_TARGETS="default;amdgcn-amd-amdhsa;nvptx64-nvidia-cuda"
+        -DRUNTIMES_nvptx64-nvidia-cuda_LLVM_ENABLE_RUNTIMES=openmp
+        -DRUNTIMES_amdgcn-amd-amdhsa_LLVM_ENABLE_RUNTIMES=openmp
+        -DLIBOMPTARGET_ENABLE_DEBUG=ON
+        -DLLVM_TARGETS_TO_BUILD="host;NVPTX;AMDGPU"
+    )
+else
+    CMAKE_ARGS+=(-DLLVM_ENABLE_RUNTIMES="compiler-rt;flang-rt;openmp")
+fi
 
 # Add rpath for dynamic linking
 if [[ -n "${LD_LIBRARY_PATH}" ]]; then
@@ -443,6 +461,11 @@ if [[ ${PRINT_CMAKE_CMD} -eq 1 ]]; then
     done
     echo "  ${SRCDIR}/llvm"
     echo "=============================================="
+    echo ""
+    if ! confirm "Proceed with the build?"; then
+        echo "Aborted by user."
+        exit 0
+    fi
     echo ""
 fi
 
