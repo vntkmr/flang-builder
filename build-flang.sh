@@ -71,6 +71,7 @@ Options:
     --print-cmake-command   Print the complete CMake command that will be executed
     --test                  Run tests after build
     --install-only          Only run install step (assumes build is complete)
+    --build-only            Only run build step (skip install)
     -y, --yes               Assume yes to all confirmation prompts
 
 Environment variables:
@@ -249,6 +250,7 @@ CLEAN_BUILD=0
 DO_CLONE=0
 RUN_TESTS=0
 INSTALL_ONLY=0
+BUILD_ONLY=0
 ASSUME_YES=0
 NO_ARGS_PROVIDED=0
 
@@ -276,6 +278,7 @@ while [[ "$#" -gt 0 ]]; do
         --print-cmake-command) PRINT_CMAKE_CMD=1 ;;
         --test) RUN_TESTS=1 ;;
         --install-only) INSTALL_ONLY=1 ;;
+        --build-only) BUILD_ONLY=1 ;;
         -y|--yes) ASSUME_YES=1 ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
@@ -491,6 +494,17 @@ fi
 if [[ "${RUN_TESTS}" -eq 1 ]]; then
     echo "Running Flang tests..."
     ninja check-flang check-flang-rt
+fi
+
+# Handle build-only mode
+if [[ "${BUILD_ONLY}" -eq 1 ]]; then
+    echo "=============================================="
+    echo "Build complete (Install skipped)"
+    echo "=============================================="
+    echo "To install later:"
+    echo "  cd ${BUILDDIR} && ninja install"
+    echo "=============================================="
+    exit 0
 fi
 
 # Install
